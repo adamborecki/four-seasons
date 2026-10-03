@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#1a1613">
+<meta name="description" content="Poems of the four seasons to read aloud, with generative soundscapes and a voice instrument.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Seasons">
+<title>The Four Seasons</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
+<link rel="icon" type="image/png" href="assets/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Jost:wght@300;400;500&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-season="">
+
+<canvas id="stage" aria-hidden="true"></canvas>
+<div id="scrim"></div>
+
+<!-- ============ season picker ============ -->
+<section id="home">
+  <button class="quad" data-season="spring" aria-label="Spring">
+    <span class="shape s-spring-a"></span><span class="shape s-spring-b"></span><span class="shape s-spring-c"></span>
+    <span class="qname">Spring</span>
+  </button>
+  <button class="quad" data-season="summer" aria-label="Summer">
+    <span class="shape s-summer-a"></span><span class="shape s-summer-b"></span><span class="shape s-summer-c"></span>
+    <span class="qname">Summer</span>
+  </button>
+  <button class="quad" data-season="winter" aria-label="Winter">
+    <span class="shape s-winter-a"></span><span class="shape s-winter-b"></span><span class="shape s-winter-c"></span>
+    <span class="qname">Winter</span>
+  </button>
+  <button class="quad" data-season="autumn" aria-label="Autumn">
+    <span class="shape s-autumn-a"></span><span class="shape s-autumn-b"></span><span class="shape s-autumn-c"></span>
+    <span class="qname">Autumn</span>
+  </button>
+  <div id="medallion">
+    <h1>The Four<br><em>Seasons</em></h1>
+    <p>poems to read aloud</p>
+  </div>
+</section>
+
+<!-- ============ reader ============ -->
+<section id="reader" hidden>
+  <div id="poem">
+    <header id="poem-head">
+      <p id="poem-num"></p>
+      <h2 id="poem-title"></h2>
+      <p id="poem-author"></p>
+      <p id="poem-note"></p>
+    </header>
+    <article id="poem-body"></article>
+  </div>
+
+  <button id="hero-hit" aria-label="Record"></button>
+  <p id="rec-time" aria-live="polite"></p>
+
+  <div id="edges">
+    <button class="edge" data-edge="top"><i></i><span></span></button>
+    <button class="edge" data-edge="right"><i></i><span></span></button>
+    <button class="edge" data-edge="bottom"><i></i><span></span></button>
+    <button class="edge" data-edge="left"><i></i><span></span></button>
+  </div>
+
+  <nav id="nav">
+    <button id="prev" aria-label="Previous poem">
+      <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <button id="ornament" aria-label="Instruments and settings">
+      <svg viewBox="0 0 48 48" class="cog">
+        <g class="teeth">
+          <circle cx="24" cy="24" r="12.5"/>
+          <path d="M24 6.5v4M24 37.5v4M6.5 24h4M37.5 24h4M11.6 11.6l2.8 2.8M33.6 33.6l2.8 2.8M11.6 36.4l2.8-2.8M33.6 14.4l2.8-2.8"/>
+        </g>
+        <path class="petal" d="M24 16c2.6 3 2.6 5 0 8-2.6-3-2.6-5 0-8zM24 32c-2.6-3-2.6-5 0-8 2.6 3 2.6 5 0 8zM16 24c3-2.6 5-2.6 8 0-3 2.6-5 2.6-8 0zM32 24c-3 2.6-5 2.6-8 0 3-2.6 5-2.6 8 0z"/>
+      </svg>
+    </button>
+    <button id="next" aria-label="Next poem">
+      <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+    </button>
+  </nav>
+
+  <div id="hints" hidden>
+    <p class="h-hero">the sun records your voice</p>
+    <p class="h-edge">double-tap an edge to change season</p>
+    <p class="h-cog">the little cog holds the instruments</p>
+  </div>
+</section>
+
+<!-- ============ instrument panel ============ -->
+<section id="panel" hidden aria-label="Instruments">
+  <div class="sheet">
+    <div class="grab"></div>
+    <header class="p-head">
+      <p class="eyebrow"><span id="p-season"></span> · instruments</p>
+      <button id="p-close" aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+
+    <div class="p-grid">
+      <div class="xy-wrap">
+        <div id="xy" role="slider" aria-label="Tone and space">
+          <span class="xy-h"></span><span class="xy-v"></span>
+          <span id="xy-puck"></span>
+          <span class="xy-label x">tone</span>
+          <span class="xy-label y">space</span>
+        </div>
+      </div>
+      <div class="knobs">
+        <div class="knob" data-param="air"><svg viewBox="0 0 64 64"><circle class="k-track" cx="32" cy="32" r="24"/><path class="k-arc"/><circle class="k-dot" r="3"/></svg><label>air</label></div>
+        <div class="knob" data-param="tune"><svg viewBox="0 0 64 64"><circle class="k-track" cx="32" cy="32" r="24"/><path class="k-arc"/><circle class="k-dot" r="3"/></svg><label>tune</label></div>
+        <div class="knob" data-param="motion"><svg viewBox="0 0 64 64"><circle class="k-track" cx="32" cy="32" r="24"/><path class="k-arc"/><circle class="k-dot" r="3"/></svg><label>motion</label></div>
+        <div class="knob" data-param="gain"><svg viewBox="0 0 64 64"><circle class="k-track" cx="32" cy="32" r="24"/><path class="k-arc"/><circle class="k-dot" r="3"/></svg><label>voice</label></div>
+      </div>
+    </div>
+
+    <div class="p-section">
+      <p class="eyebrow">voice</p>
+      <div class="seg" role="radiogroup" aria-label="Monitoring">
+        <button data-mode="speaker" class="on" role="radio" aria-checked="true">Speaker <small>record, then hear it</small></button>
+        <button data-mode="headphones" role="radio" aria-checked="false">Headphones <small>live, as you sing</small></button>
+      </div>
+      <div class="takes">
+        <button id="p-rec" class="pill rec"><i></i><span>Record</span></button>
+        <button id="p-play" class="pill" disabled>Play take</button>
+        <button id="p-save" class="pill" disabled>Save take</button>
+      </div>
+      <p id="p-status" class="fine"></p>
+    </div>
+
+    <div class="p-section">
+      <p class="eyebrow">reading</p>
+      <div class="row">
+        <button id="p-text" class="pill">Hide text</button>
+        <button id="p-smaller" class="pill sq" aria-label="Smaller text">A−</button>
+        <button id="p-bigger" class="pill sq" aria-label="Larger text">A+</button>
+        <button id="p-own" class="pill">Your poem</button>
+      </div>
+      <p id="p-awake" class="fine"></p>
+    </div>
+
+    <div class="p-section about">
+      <p class="fine">Tap the sun or moon to record. Double-tap an edge for another season, or double-tap the current season's edge to go back to the cover. With the text hidden, drag anywhere on the picture to play tone and space.</p>
+      <p class="fine">All poems here are in the public domain. The selection follows <em>The Four Seasons</em> (Everyman's Library Pocket Poets, ed. J.&nbsp;D.&nbsp;McClatchy), which is the book to read from. Use “Your poem” to add one still in copyright from your own copy; it is stored only on this device.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ your-poem editor ============ -->
+<section id="editor" hidden aria-label="Your poem">
+  <div class="sheet">
+    <p class="eyebrow"><span id="e-season"></span> · your poem</p>
+    <input id="e-title" placeholder="Title" autocomplete="off">
+    <input id="e-author" placeholder="Poet" autocomplete="off">
+    <textarea id="e-text" placeholder="Paste or type the poem. Blank lines separate stanzas." rows="10"></textarea>
+    <p class="fine">Kept only in this browser on this device.</p>
+    <div class="row">
+      <button id="e-save" class="pill solid">Keep</button>
+      <button id="e-cancel" class="pill">Cancel</button>
+      <button id="e-clear" class="pill ghost">Remove</button>
+    </div>
+  </div>
+</section>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<video id="awake" playsinline muted loop preload="auto" src="assets/awake.mp4" aria-hidden="true"></video>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
