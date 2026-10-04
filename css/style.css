@@ -247,6 +247,8 @@ body.text-off #poem { opacity: 0; pointer-events: none; }
 .seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .seg button { padding: 11px 10px; font-family: var(--sans); font-size: 13px; text-align: left; line-height: 1.25; }
 .seg button small { display: block; font-size: 10.5px; color: var(--soft); letter-spacing: .02em; }
+.seg.mini { display: inline-grid; grid-template-columns: repeat(3, auto); border-radius: 999px; }
+.seg.mini button { padding: 9px 13px; font-size: 12px; text-align: center; }
 .seg button.on { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .takes, .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .pill {

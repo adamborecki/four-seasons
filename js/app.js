@@ -30,6 +30,7 @@ let season = null;
 let idx = store.get('idx', {});
 let textOn = store.get('textOn', true);
 let fs = store.get('fs', 1);
+let pauseSec = store.get('pause', 0.8);
 
 // ---------------------------------------------------------------- poems
 function own(s) { return store.get('own.' + s, null); }
@@ -128,14 +129,14 @@ function enterSeason(s) {
     el.style.setProperty('--edge', target === s ? 'currentColor' : `var(--edge-${target})`);
     el.querySelector('span').textContent = target === s ? 'cover' : NAMES[target];
   });
-  $('#hints .h-hero').textContent = `the ${HERO_WORD[s]} records your voice`;
+  $('#hints .h-hero').textContent = `tap the ${HERO_WORD[s]} to listen`;
   renderPoem(0);
   syncPanel();
 }
 
 function goHome() {
-  if (engine.recording) engine.stopRecording();
-  engine.stopPlayback();
+  engine.stopListening();
+  if (engine.capture) engine.stopCapture().then((b) => { lastBlob = b; });
   engine.setSeason(null);
   season = null;
   document.body.classList.remove('reading');
@@ -151,7 +152,7 @@ async function start(s) {
   setTimeout(() => { home.hidden = true; }, 1200);
   requestMotion();
   keepAwake();
-  try { await engine.init(); } catch (e) { toast('Audio could not start'); }
+  try { await engine.init(); engine.setPause(pauseSec); } catch (e) { toast('Audio could not start'); }
   enterSeason(s);
   if (!store.get('hinted', false)) {
     store.set('hinted', true);
@@ -195,47 +196,52 @@ $('#poem').addEventListener('pointerup', (e) => {
   if (Math.abs(dx) > 60 && Math.abs(dy) < 45) step(dx < 0 ? 1 : -1);
 });
 
-// ---------------------------------------------------------------- recording
-async function toggleRecord() {
+// ---------------------------------------------------------------- listening
+async function toggleListen() {
   await engine.resume();
-  if (engine.recording) { engine.stopRecording(); return; }
+  if (engine.listening) { engine.stopListening(); return; }
   try {
-    const ok = await engine.startRecording();
-    if (!ok) toast('Recording is not supported in this browser');
+    const ok = await engine.startListening();
+    if (!ok) toast('Listening is not supported in this browser');
   } catch (e) {
     toast('Microphone unavailable — check permissions');
   }
 }
-hero.addEventListener('click', toggleRecord);
+hero.addEventListener('click', toggleListen);
 
-let recTimer = 0;
-engine.on('rec', (on) => {
-  $('#p-rec').classList.toggle('on', on);
-  $('#p-rec span').textContent = on ? 'Stop' : 'Record';
-  clearInterval(recTimer);
-  recTime.textContent = '';
-  if (on) {
-    recTimer = setInterval(() => {
-      const s = Math.floor(engine.ctx.currentTime - engine.recStart);
-      recTime.textContent = `● ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-    }, 250);
-  }
-});
-engine.on('take', (buf) => {
-  if (!buf) { toast('Too short — try again'); return; }
+engine.on('listen', (on) => {
+  $('#p-listen').classList.toggle('on', on);
+  $('#p-listen span').textContent = on ? 'Listening' : 'Listen';
+  hero.setAttribute('aria-label', on ? 'Stop listening' : 'Listen');
+  toast(on ? 'Listening — read, and pause' : 'Stopped listening');
   status();
-  engine.playTake();
 });
-engine.on('play', status);
 engine.on('live', (on) => { syncMode(); status(); if (on) toast('Live voice on — headphones only'); });
 engine.on('feedback', () => toast('Feedback detected — live voice paused'));
 
+let capTimer = 0, lastBlob = null;
+engine.on('capture', (on) => {
+  clearInterval(capTimer);
+  recTime.textContent = '';
+  if (on) {
+    capTimer = setInterval(() => {
+      const s = Math.floor(engine.ctx.currentTime - engine.capture.start);
+      recTime.textContent = `● ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    }, 250);
+  }
+  status();
+});
+
 function status() {
-  const t = engine.take;
-  $('#p-play').disabled = !t;
-  $('#p-save').disabled = !t || !window.MediaRecorder;
-  $('#p-play').textContent = engine.playing ? 'Stop' : 'Play take';
-  $('#p-status').textContent = t ? `Take · ${t.duration.toFixed(1)}s, processed through ${NAMES[season] || ''}` : 'No take yet.';
+  const cap = $('#p-cap');
+  cap.disabled = !window.MediaRecorder;
+  cap.classList.toggle('on', !!engine.capture);
+  cap.querySelector('span').textContent = engine.capture ? 'Stop recording' : 'Record session';
+  $('#p-share').hidden = !lastBlob || !!engine.capture;
+  const bits = [];
+  bits.push(engine.listening ? 'Listening.' : 'Not listening — tap the sun or moon.');
+  if (engine.capture) bits.push('Recording the session: soundscape, echoes and your voice.');
+  $('#p-status').textContent = bits.join(' ');
 }
 
 // ---------------------------------------------------------------- panel
@@ -309,40 +315,58 @@ stage.addEventListener('pointerup', endXY);
 stage.addEventListener('pointercancel', endXY);
 
 function syncMode() {
-  document.querySelectorAll('.seg button').forEach((b) => {
+  document.querySelectorAll('.seg [data-mode]').forEach((b) => {
     const on = b.dataset.mode === (engine.live ? 'headphones' : 'speaker');
     b.classList.toggle('on', on);
     b.setAttribute('aria-checked', on);
   });
+  document.querySelectorAll('.seg [data-pause]').forEach((b) => {
+    const on = +b.dataset.pause === pauseSec;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on);
+  });
 }
-document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', async () => {
+document.querySelectorAll('.seg [data-mode]').forEach((b) => b.addEventListener('click', async () => {
   const wantLive = b.dataset.mode === 'headphones';
   if (wantLive === engine.live) return;
-  if (wantLive && !confirm('Live voice plays your microphone back as you sing. Use headphones — with speakers it can feed back. Headphones on?')) return;
+  if (wantLive && !confirm('Live voice plays your microphone back as you speak. Use headphones — with speakers it can feed back. Headphones on?')) return;
   try { await engine.setLive(wantLive); } catch (e) { toast('Microphone unavailable — check permissions'); }
   syncMode();
 }));
+document.querySelectorAll('.seg [data-pause]').forEach((b) => b.addEventListener('click', () => {
+  pauseSec = +b.dataset.pause;
+  store.set('pause', pauseSec);
+  engine.setPause(pauseSec);
+  syncMode();
+}));
 
-$('#p-rec').onclick = toggleRecord;
-$('#p-play').onclick = () => (engine.playing ? engine.stopPlayback() : engine.playTake());
-$('#p-save').onclick = async () => {
-  $('#p-save').disabled = true;
-  toast('Rendering — the take plays through once');
-  const blob = await engine.renderTake();
-  status();
-  if (!blob) return;
+$('#p-listen').onclick = toggleListen;
+
+async function shareBlob(blob) {
   const ext = blob.type.includes('mp4') ? 'm4a' : 'webm';
-  const name = `four-seasons-${season}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.${ext}`;
+  const name = `four-seasons-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.${ext}`;
   const file = new File([blob], name, { type: blob.type });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: 'The Four Seasons' }); return; } catch (e) { /* cancelled */ }
+    try { await navigator.share({ files: [file], title: 'The Four Seasons' }); return; } catch (e) { if (e.name === 'AbortError') return; }
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+$('#p-cap').onclick = async () => {
+  if (engine.capture) {
+    lastBlob = await engine.stopCapture();
+    status();
+    toast('Recording ready to share');
+  } else {
+    lastBlob = null;
+    engine.startCapture();
+  }
 };
+// sharing needs its own fresh tap for the iOS share sheet
+$('#p-share').onclick = () => { if (lastBlob) shareBlob(lastBlob); };
 
 $('#p-text').onclick = () => {
   textOn = !textOn;

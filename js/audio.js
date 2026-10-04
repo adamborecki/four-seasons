@@ -8,6 +8,10 @@
 //  - "headphones" mode: live processed voice. A howl detector watches the
 //    mic spectrum and the output level and cuts live voice if it sees
 //    feedback. A brickwall-ish limiter sits on the master bus always.
+//  - listening (bloom.js): the mic is open but only captured, never
+//    monitored; echoes play in your pauses and duck when you speak.
+
+import { Listener, Bloom } from './bloom.js';
 
 export const SCALES = {
   spring: { root: 62, steps: [0, 2, 4, 7, 9] },        // D major pentatonic
@@ -17,10 +21,10 @@ export const SCALES = {
 };
 
 export const DEFAULTS = {
-  spring: { tone: 0.72, space: 0.62, air: 0.75, tune: 0.55, motion: 0.5, gain: 0.5 },
-  summer: { tone: 0.6, space: 0.45, air: 0.75, tune: 0.5, motion: 0.5, gain: 0.5 },
-  autumn: { tone: 0.55, space: 0.5, air: 0.75, tune: 0.45, motion: 0.5, gain: 0.5 },
-  winter: { tone: 0.8, space: 0.3, air: 0.7, tune: 0.6, motion: 0.45, gain: 0.5 },
+  spring: { tone: 0.72, space: 0.62, air: 0.75, tune: 0.55, motion: 0.5, echo: 0.6 },
+  summer: { tone: 0.6, space: 0.45, air: 0.75, tune: 0.5, motion: 0.5, echo: 0.6 },
+  autumn: { tone: 0.55, space: 0.5, air: 0.75, tune: 0.45, motion: 0.5, echo: 0.6 },
+  winter: { tone: 0.8, space: 0.3, air: 0.7, tune: 0.6, motion: 0.45, echo: 0.6 },
 };
 
 const RIG = {
@@ -145,6 +149,7 @@ class Rig {
     this.voiceSend.connect(this.send);
     this.buildVoiceFx();
     this.buildFollower();
+    this.bloom = new Bloom(this);
 
     this.scape = new SCAPES[id](this);
   }
@@ -395,6 +400,7 @@ class Rig {
     this.ambLevel.gain.setTargetAtTime(p.air * this.cfg.amb, t, T);
     this.wetLevel.gain.setTargetAtTime(p.air * this.cfg.amb, t, T);
     this.voiceSend.gain.setTargetAtTime(this.cfg.voiceSend * (0.25 + 1.5 * p.space), t, T);
+    this.bloom.setLevel(p.echo * 1.6);
     if (this.scape.apply) this.scape.apply(p);
   }
 
@@ -728,6 +734,7 @@ class Winter {
 
 const SCAPES = { spring: Spring, summer: Summer, autumn: Autumn, winter: Winter };
 
+
 // ---------------------------------------------------------------- Engine
 
 export class Engine {
@@ -736,14 +743,13 @@ export class Engine {
     this.rig = null;
     this.season = null;
     this.params = { ...DEFAULTS.spring };
-    this.state = { heat: 0, gust: 0, voiceLevel: 0, pitch: 0, voiced: false };
+    this.state = { heat: 0, gust: 0, voiceLevel: 0, pitch: 0, voiced: false, speaking: false, bloom: 0 };
     this.events = [];
     this.mode = 'speaker';
     this.live = false;
+    this.listening = false;
     this.mic = null;
-    this.recording = false;
-    this.take = null;
-    this.playing = null;
+    this.capture = null;
     this.followerOn = false;
     this.handlers = {};
     this.howl = { bin: -1, count: 0, loud: 0 };
@@ -785,6 +791,7 @@ export class Engine {
     this.silent.connect(c.destination);
 
     this.voiceIn = c.createGain();
+    this.voiceIn.gain.value = 1.6;
     this.voiceTap = c.createGain();
     this.voiceTap.gain.value = 0;
 
@@ -801,10 +808,11 @@ export class Engine {
       split.connect(this.harmGain, 1);
       this.harmGain.connect(this.voiceTap);
       this.tuner.connect(this.silent);
-      this.recNode = new AudioWorkletNode(c, 'recorder', { numberOfInputs: 1, numberOfOutputs: 1 });
-      this.recNode.connect(this.silent);
+      this.listenNode = new AudioWorkletNode(c, 'listener', { numberOfInputs: 1, numberOfOutputs: 1 });
+      this.listenNode.connect(this.silent);
+      this.listener = new Listener(this, this.listenNode);
     } catch (e) {
-      console.warn('AudioWorklet unavailable; voice tuning disabled', e);
+      console.warn('AudioWorklet unavailable; listening and tuning disabled', e);
       this.voiceIn.connect(this.voiceTap);
     }
 
@@ -836,6 +844,7 @@ export class Engine {
     this.rig = rig;
     this.voiceTap.connect(rig.voiceIn);
     rig.fade(1, 2.4);
+    if (this.state.speaking) rig.bloom.duckTo(true);
     if (this.tuner) this.tuner.port.postMessage({ scale: SCALES[id] });
     this.setParams(this.params);
   }
@@ -845,10 +854,11 @@ export class Engine {
     if (!this.ctx) return;
     const P = this.params, t = this.ctx.currentTime;
     if (this.rig) this.rig.apply(P);
-    this.voiceIn.gain.setTargetAtTime(0.4 + P.gain * 3.2, t, 0.05);
     if (this.harmGain) this.harmGain.gain.setTargetAtTime(Math.max(0, (P.tune - 0.35) / 0.65) * 0.55, t, 0.1);
     if (this.tuner) this.tuner.port.postMessage({ amount: P.tune });
   }
+
+  setPause(sec) { if (this.listener) this.listener.pauseSec = sec; }
 
   onPitch(d) {
     const s = this.state;
@@ -856,6 +866,22 @@ export class Engine {
     s.voiced = !!d.voiced;
     if (d.voiced) s.pitch = d.midi;
     if (this.rig) this.rig.onPitch(d, this.followerOn, this.params.tune);
+  }
+
+  // ---- listening callbacks (from Listener) ---------------------------
+  bloomDb() { return this.rig ? this.rig.bloom.db() : -120; }
+
+  onSpeak(on) {
+    this.state.speaking = on;
+    if (this.rig) this.rig.bloom.duckTo(on);
+    this.emit('speak', on);
+  }
+
+  onPhrase(phrase, pool, paused) {
+    if (!this.rig || !this.listening) return;
+    this.rig.bloom.start(phrase, pool, this.params);
+    this.pushEvent({ type: 'bloom', t: this.ctx.currentTime, paused });
+    this.emit('bloom', phrase);
   }
 
   level() {
@@ -869,12 +895,18 @@ export class Engine {
   tick(force) {
     if (!this.ctx || (this.ctx.state !== 'running' && !force)) return;
     const t = this.ctx.currentTime;
-    if (this.rig) this.rig.scape.tick(t, this.params);
-    if (this.recording && t - this.recStart > 300) this.stopRecording();
+    if (this.rig) {
+      this.rig.scape.tick(t, this.params);
+      this.rig.bloom.tick(t, this.params, this.state.speaking, this.state.gust);
+      const b = this.listening ? this.rig.bloom.db() : -120;
+      this.state.bloom = clamp((b + 50) / 35);
+    }
     this.guard();
   }
 
   // ---- microphone ----------------------------------------------------
+  // Opening the mic switches iOS into play-and-record (a brief audio gap),
+  // so it stays open for as long as listening or live voice needs it.
   async openMic() {
     if (this.mic) return this.mic;
     setSession('play-and-record');
@@ -889,6 +921,9 @@ export class Engine {
     an.smoothingTimeConstant = 0;
     src.connect(an);
     an.connect(this.silent);
+    src.connect(this.voiceIn); // pitch tracking for visuals; audible only when live
+    if (this.listenNode) src.connect(this.listenNode);
+    if (this.capture) src.connect(this.capture.voice);
     this.mic = { stream, src, an, fbuf: new Float32Array(an.frequencyBinCount) };
     return this.mic;
   }
@@ -901,133 +936,75 @@ export class Engine {
     setSession('playback');
   }
 
-  voiceAudible() { return this.live || !!this.playing; }
+  releaseMicIfIdle() { if (!this.listening && !this.live) this.closeMic(); }
+
   updateTap() {
     const t = this.ctx.currentTime;
-    this.voiceTap.gain.setTargetAtTime(this.voiceAudible() ? 1 : 0, t, 0.03);
-    this.followerOn = this.voiceAudible();
+    this.voiceTap.gain.setTargetAtTime(this.live ? 1 : 0, t, 0.03);
+    this.followerOn = this.live;
   }
 
-  async startRecording() {
-    if (this.recording || !this.recNode) return false;
-    this.stopPlayback();
+  async startListening() {
+    if (this.listening) return true;
+    if (!this.listener) return false;
     await this.openMic();
-    this.mic.src.connect(this.recNode);
-    if (!this.live) this.mic.src.connect(this.voiceIn); // analysis only; tap stays closed
-    this.updateTap();
-    this.chunks = [];
-    this.recNode.port.onmessage = (e) => {
-      if (e.data.chunk) this.chunks.push(e.data.chunk);
-      if (e.data.done) this.finishTake();
-    };
-    this.recNode.port.postMessage('start');
-    this.recording = true;
-    this.recStart = this.ctx.currentTime;
-    this.emit('rec', true);
+    this.listening = true;
+    this.listener.start();
+    this.emit('listen', true);
     return true;
   }
 
-  stopRecording() {
-    if (!this.recording) return;
-    this.recording = false;
-    this.recNode.port.postMessage('stop');
-    if (this.mic) {
-      try { this.mic.src.disconnect(this.recNode); } catch (e) { /* ignore */ }
-      if (!this.live) {
-        try { this.mic.src.disconnect(this.voiceIn); } catch (e) { /* ignore */ }
-        this.closeMic();
-      }
-    }
-    this.emit('rec', false);
+  stopListening() {
+    if (!this.listening) return;
+    this.listening = false;
+    this.listener.stop();
+    this.releaseMicIfIdle();
+    this.emit('listen', false);
   }
 
-  finishTake() {
-    const total = this.chunks.reduce((a, c) => a + c.length, 0);
-    if (total < this.ctx.sampleRate * 0.3) { this.emit('take', null); return; }
-    const buf = this.ctx.createBuffer(1, total, this.ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    let o = 0;
-    for (const c of this.chunks) { d.set(c, o); o += c.length; }
-    // gentle fades at the edges
-    const f = Math.min(800, total >> 2);
-    for (let i = 0; i < f; i++) { d[i] *= i / f; d[total - 1 - i] *= i / f; }
-    this.chunks = [];
-    this.take = buf;
-    this.emit('take', buf);
-  }
-
-  playTake() {
-    if (!this.take) return null;
-    this.stopPlayback();
-    const s = this.ctx.createBufferSource();
-    s.buffer = this.take;
-    s.connect(this.voiceIn);
-    s.onended = () => {
-      if (this.playing === s) {
-        this.playing = null;
-        this.updateTap();
-        this.emit('play', false);
-      }
-    };
-    this.playing = s;
+  async setLive(on) {
+    if (on === this.live) return;
+    this.mode = on ? 'headphones' : 'speaker';
+    this.live = on;
+    if (this.mic) this.closeMic(); // reopen with/without echo cancellation
+    if (this.listening || this.live) await this.openMic();
+    this.howl = { bin: -1, count: 0, loud: 0 };
     this.updateTap();
-    s.start();
-    this.emit('play', true);
-    return s;
+    this.emit('live', this.live);
   }
 
-  stopPlayback() {
-    if (!this.playing) return;
-    const s = this.playing;
-    this.playing = null;
-    try { s.stop(); } catch (e) { /* ignore */ }
-    try { s.disconnect(); } catch (e) { /* ignore */ }
-    this.updateTap();
-    this.emit('play', false);
-  }
-
-  // Play the take through the current season and capture the full mix.
-  async renderTake() {
-    if (!this.take || !window.MediaRecorder) return null;
-    const dest = this.ctx.createMediaStreamDestination();
+  // ---- session recording: the full mix plus your dry voice -----------
+  startCapture() {
+    if (this.capture || !window.MediaRecorder) return false;
+    const c = this.ctx;
+    const dest = c.createMediaStreamDestination();
+    const voice = c.createGain();
+    voice.gain.value = this.live ? 0 : 1; // live mode already has the voice in the mix
+    voice.connect(dest);
     this.analyser.connect(dest);
+    if (this.mic) this.mic.src.connect(voice);
     const types = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'];
     const mime = types.find((t) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
     const rec = new MediaRecorder(dest.stream, mime ? { mimeType: mime } : undefined);
     const chunks = [];
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     const done = new Promise((res) => { rec.onstop = () => res(new Blob(chunks, { type: rec.mimeType || mime || 'audio/webm' })); });
-    rec.start();
-    const s = this.playTake();
-    await new Promise((res) => s.addEventListener('ended', res, { once: true }));
-    await new Promise((res) => setTimeout(res, 1800));
-    rec.stop();
-    const blob = await done;
-    try { this.analyser.disconnect(dest); } catch (e) { /* ignore */ }
-    return blob;
+    rec.start(1000);
+    this.capture = { dest, voice, rec, done, start: c.currentTime };
+    this.emit('capture', true);
+    return true;
   }
 
-  async setLive(on) {
-    if (on === this.live) return;
-    if (on) {
-      this.mode = 'headphones';
-      if (this.mic && !this.recording) this.closeMic(); // reopen without echo cancellation
-      await this.openMic();
-      this.mic.src.connect(this.voiceIn);
-      this.live = true;
-      this.howl = { bin: -1, count: 0, loud: 0 };
-    } else {
-      this.live = false;
-      this.mode = 'speaker';
-      if (this.mic) {
-        if (!this.recording) {
-          try { this.mic.src.disconnect(this.voiceIn); } catch (e) { /* ignore */ }
-          this.closeMic();
-        }
-      }
-    }
-    this.updateTap();
-    this.emit('live', this.live);
+  async stopCapture() {
+    const cap = this.capture;
+    if (!cap) return null;
+    this.capture = null;
+    cap.rec.stop();
+    const blob = await cap.done;
+    try { this.analyser.disconnect(cap.dest); } catch (e) { /* ignore */ }
+    try { cap.voice.disconnect(); } catch (e) { /* ignore */ }
+    this.emit('capture', false);
+    return blob;
   }
 
   // Howl / runaway-level detector for live mode.

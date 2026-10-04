@@ -51,28 +51,22 @@ class Scene {
     const r = Math.min(this.u * 0.115, 110);
     return { x: this.w * 0.78 + ox, y: Math.max(this.h * 0.14, 70 + r) + oy, r };
   }
-  // record / playback rings around the hero shape
+  // listening / speaking / answering rings around the hero shape
   heroState(g, hero, S, color) {
     const { x, y, r } = hero;
-    if (S.rec) {
-      const pulse = 0.5 + 0.5 * Math.sin(S.t * 5);
-      ring(g, x, y, r * (1.28 + pulse * 0.05), rgba(color, 0.35 + pulse * 0.4), 2);
-      g.beginPath();
-      g.arc(x, y, r * 1.42, -Math.PI / 2, -Math.PI / 2 + TAU * ((S.recT % 60) / 60));
-      g.strokeStyle = rgba(color, 0.9);
-      g.lineWidth = 2.5;
-      g.lineCap = 'round';
-      g.stroke();
-    } else if (S.playing) {
-      g.save();
-      g.translate(x, y);
-      g.rotate(S.t * 0.6);
-      for (let i = 0; i < 24; i++) {
-        const a = (i / 24) * TAU;
-        circle(g, Math.cos(a) * r * 1.35, Math.sin(a) * r * 1.35, 1.6 + S.level * 2.5, rgba(color, 0.75));
+    if (S.listening) {
+      const breathe = 0.5 + 0.5 * Math.sin(S.t * 1.3);
+      const lv = S.speaking ? S.level : 0;
+      ring(g, x, y, r * (1.26 + breathe * 0.04 + lv * 0.25),
+        rgba(color, S.speaking ? 0.55 + lv * 0.4 : 0.22 + breathe * 0.18), S.speaking ? 2 : 1.2);
+      if (S.bloom > 0.02) {
+        for (let i = 0; i < 3; i++) {
+          const p = (S.t * 0.35 + i / 3) % 1;
+          ring(g, x, y, r * (1.3 + p * 1.8), rgba(color, (1 - p) * S.bloom * 0.6), 1.2);
+        }
       }
-      g.restore();
     }
+    if (S.capturing) circle(g, x + r * 0.95, y - r * 0.95, 4, rgba('#D8433A', 0.6 + 0.4 * Math.sin(S.t * 4)));
   }
 }
 
@@ -563,7 +557,7 @@ export class Visuals {
     this.mixT = 1;
     this.px = 0; this.py = 0; this.tx = 0; this.ty = 0;
     this.level = 0;
-    this.ui = { rec: false, recStart: 0, playing: false, xy: null };
+    this.ui = { xy: null };
     this.t0 = performance.now();
     this.last = this.t0;
     this.grain = makeGrain();
@@ -611,7 +605,7 @@ export class Visuals {
 
     const e = this.e, st = e.state;
     const out = e.ctx ? e.level() : 0;
-    const voiceActive = e.recording || e.live || e.playing;
+    const voiceActive = e.listening || e.live;
     const target = clamp(Math.max(out * 2.4, voiceActive ? st.voiceLevel * 7 : 0));
     this.level += (target - this.level) * (target > this.level ? 0.35 : 0.06);
 
@@ -625,13 +619,13 @@ export class Visuals {
       t, dt, px: this.px, py: this.py, level: this.level,
       heat: st.heat || 0, gust: st.gust || 0, voiced: st.voiced, pitch: st.pitch || 0,
       motion: e.params.motion, events: due,
-      rec: e.recording, recT: e.recording ? e.ctx.currentTime - e.recStart : 0, playing: !!e.playing,
+      listening: e.listening, speaking: st.speaking, bloom: st.bloom || 0, capturing: !!e.capture,
     };
 
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (this.prev && this.mixT < 1) {
       this.mixT = Math.min(1, this.mixT + dt / 1.8);
-      this.prev.draw(g, { ...S, events: [], rec: false, playing: false });
+      this.prev.draw(g, { ...S, events: [], listening: false, capturing: false });
       this.og.setTransform(dpr, 0, 0, dpr, 0, 0);
       this.cur.draw(this.og, S);
       g.setTransform(1, 0, 0, 1, 0, 0);

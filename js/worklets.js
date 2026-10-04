@@ -2,7 +2,7 @@
 //  - "tuner": YIN pitch detection + two-tap delay-line pitch shifter that
 //    nudges the voice toward the current season's scale, plus a diatonic
 //    harmony voice. Output channel 0 = tuned voice, channel 1 = harmony.
-//  - "recorder": captures raw mono input in chunks for the take buffer.
+//  - "listener": rolling mic buffer + level reports for listening mode.
 
 class Shifter {
   constructor(win) {
@@ -201,26 +201,39 @@ class Tuner extends AudioWorkletProcessor {
   }
 }
 
-class Recorder extends AudioWorkletProcessor {
+// Rolling 30 s buffer of the mic. Reports level every 1024 samples and
+// returns any recent span [a, b) (absolute sample positions) on request.
+class Listener extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.on = false;
-    this.chunk = new Float32Array(16384);
+    this.N = Math.floor(sampleRate * 30);
+    this.buf = new Float32Array(this.N);
+    this.pos = 0;
+    this.acc = 0;
     this.n = 0;
     this.port.onmessage = (e) => {
-      if (e.data === 'start') { this.on = true; this.n = 0; }
-      else if (e.data === 'stop') { this.flush(); this.on = false; this.port.postMessage({ done: true }); }
+      const g = e.data.get;
+      if (!g) return;
+      const b = Math.min(g.b, this.pos);
+      const a = Math.max(g.a, this.pos - this.N + 1, 0);
+      if (b <= a) { this.port.postMessage({ id: g.id, seg: null }); return; }
+      const out = new Float32Array(b - a);
+      for (let i = 0; i < out.length; i++) out[i] = this.buf[(a + i) % this.N];
+      this.port.postMessage({ id: g.id, seg: out }, [out.buffer]);
     };
-  }
-  flush() {
-    if (this.n) { this.port.postMessage({ chunk: this.chunk.slice(0, this.n) }); this.n = 0; }
   }
   process(inputs) {
     const ch = inputs[0] && inputs[0][0];
-    if (this.on && ch) {
-      for (let i = 0; i < ch.length; i++) {
-        this.chunk[this.n++] = ch[i];
-        if (this.n === this.chunk.length) this.flush();
+    if (!ch) return true;
+    for (let i = 0; i < ch.length; i++) {
+      const v = ch[i];
+      this.buf[this.pos % this.N] = v;
+      this.pos++;
+      this.acc += v * v;
+      if (++this.n >= 1024) {
+        this.port.postMessage({ pos: this.pos, n: this.n, rms: Math.sqrt(this.acc / this.n) });
+        this.acc = 0;
+        this.n = 0;
       }
     }
     return true;
@@ -228,4 +241,4 @@ class Recorder extends AudioWorkletProcessor {
 }
 
 registerProcessor('tuner', Tuner);
-registerProcessor('recorder', Recorder);
+registerProcessor('listener', Listener);

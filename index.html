@@ -88,7 +88,7 @@
   </nav>
 
   <div id="hints" hidden>
-    <p class="h-hero">the sun records your voice</p>
+    <p class="h-hero">tap the sun to listen</p>
     <p class="h-edge">double-tap an edge to change season</p>
     <p class="h-cog">the little cog holds the instruments</p>
   </div>
@@ -118,20 +118,28 @@
         <div class="knob" data-param="air"><svg viewBox="0 0 64 64"><circle class="k-track" cx="32" cy="32" r="24"/><path class="k-arc"/><circle class="k-dot" r="3"/></svg><label>air</label></div>
         <div class="knob" data-param="tune"><svg viewBox="0 0 64 64"><circle class="k-track" cx="32" cy="32" r="24"/><path class="k-arc"/><circle class="k-dot" r="3"/></svg><label>tune</label></div>
         <div class="knob" data-param="motion"><svg viewBox="0 0 64 64"><circle class="k-track" cx="32" cy="32" r="24"/><path class="k-arc"/><circle class="k-dot" r="3"/></svg><label>motion</label></div>
-        <div class="knob" data-param="gain"><svg viewBox="0 0 64 64"><circle class="k-track" cx="32" cy="32" r="24"/><path class="k-arc"/><circle class="k-dot" r="3"/></svg><label>voice</label></div>
+        <div class="knob" data-param="echo"><svg viewBox="0 0 64 64"><circle class="k-track" cx="32" cy="32" r="24"/><path class="k-arc"/><circle class="k-dot" r="3"/></svg><label>echo</label></div>
       </div>
     </div>
 
     <div class="p-section">
-      <p class="eyebrow">voice</p>
-      <div class="seg" role="radiogroup" aria-label="Monitoring">
-        <button data-mode="speaker" class="on" role="radio" aria-checked="true">Speaker <small>record, then hear it</small></button>
-        <button data-mode="headphones" role="radio" aria-checked="false">Headphones <small>live, as you sing</small></button>
+      <p class="eyebrow">listening</p>
+      <div class="row">
+        <button id="p-listen" class="pill rec"><i></i><span>Listen</span></button>
+        <div class="seg mini" role="radiogroup" aria-label="Pause before it answers">
+          <button data-pause="0.5" role="radio">short</button>
+          <button data-pause="0.8" role="radio">medium</button>
+          <button data-pause="1.3" role="radio">long</button>
+        </div>
+      </div>
+      <p class="fine">Read aloud. Each time you pause, it answers with what it just heard, and it ducks when you speak again.</p>
+      <div class="seg" role="radiogroup" aria-label="Monitoring" style="margin-top:14px">
+        <button data-mode="speaker" class="on" role="radio" aria-checked="true">Speaker <small>echoes in your pauses</small></button>
+        <button data-mode="headphones" role="radio" aria-checked="false">Headphones <small>plus your voice, live</small></button>
       </div>
       <div class="takes">
-        <button id="p-rec" class="pill rec"><i></i><span>Record</span></button>
-        <button id="p-play" class="pill" disabled>Play take</button>
-        <button id="p-save" class="pill" disabled>Save take</button>
+        <button id="p-cap" class="pill rec"><i></i><span>Record session</span></button>
+        <button id="p-share" class="pill solid" hidden>Share recording</button>
       </div>
       <p id="p-status" class="fine"></p>
     </div>
@@ -148,7 +156,7 @@
     </div>
 
     <div class="p-section about">
-      <p class="fine">Tap the sun or moon to record. Double-tap an edge for another season, or double-tap the current season's edge to go back to the cover. With the text hidden, drag anywhere on the picture to play tone and space.</p>
+      <p class="fine">Tap the sun or moon to start listening; read, and it answers in your pauses. Tap again to stop. Double-tap an edge for another season, or double-tap the current season's edge to go back to the cover. With the text hidden, drag anywhere on the picture to play tone and space.</p>
       <p class="fine">All poems here are in the public domain. The selection follows <em>The Four Seasons</em> (Everyman's Library Pocket Poets, ed. J.&nbsp;D.&nbsp;McClatchy), which is the book to read from. Use “Your poem” to add one still in copyright from your own copy; it is stored only on this device.</p>
     </div>
   </div>

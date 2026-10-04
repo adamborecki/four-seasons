@@ -1,9 +1,9 @@
 // Offline cache so the app works at a reading with no signal.
 // Bump VERSION whenever files change.
-const VERSION = 'fs-v1';
+const VERSION = 'fs-v2';
 const ASSETS = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest',
-  'js/app.js', 'js/audio.js', 'js/visuals.js', 'js/poems.js', 'js/worklets.js',
+  'js/app.js', 'js/audio.js', 'js/bloom.js', 'js/visuals.js', 'js/poems.js', 'js/worklets.js',
   'assets/icon-180.png', 'assets/icon-192.png', 'assets/icon-512.png',
 ];
 
